@@ -1,0 +1,89 @@
+# Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ingress-nginx
+---
+# NGINX Ingress Controller
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-ingress-controller
+  namespace: ingress-nginx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx-ingress-controller
+  template:
+    metadata:
+      labels:
+        app: nginx-ingress-controller
+    spec:
+      containers:
+      - name: nginx-ingress-controller
+        image: k8s.gcr.io/ingress-nginx/controller:v1.1.1
+        args:
+        - /nginx-ingress-controller
+        - --publish-service=$(POD_NAMESPACE)/ingress-nginx-controller
+        - --election-id=ingress-controller-leader
+        - --ingress-class=nginx
+        - --configmap=$(POD_NAMESPACE)/ingress-nginx-controller
+        - --validating-webhook=:8443
+        - --validating-webhook-certificate=/usr/local/certificates/cert.pem
+        - --validating-webhook-key=/usr/local/certificates/key.pem
+        ports:
+        - containerPort: 80
+        - containerPort: 443
+        volumeMounts:
+        - name: webhook-cert
+          mountPath: /usr/local/certificates/
+          readOnly: true
+      volumes:
+      - name: webhook-cert
+        secret:
+          secretName: ingress-nginx-certs
+---
+# Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-ingress-controller
+  namespace: ingress-nginx
+spec:
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+    name: http
+  - port: 443
+    targetPort: 443
+    protocol: TCP
+    name: https
+  selector:
+    app: nginx-ingress-controller
+---
+# Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-nginx
+  namespace: ingress-nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  tls:
+  - hosts:
+    - example.com
+    secretName: example-com-tls
+  rules:
+  - host: example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: your-service
+            port:
+              number: 80
